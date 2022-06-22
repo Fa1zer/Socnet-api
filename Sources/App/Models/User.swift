@@ -45,7 +45,7 @@ final class User: Model, Content {
     
     init() { }
     
-    init(id: UUID? = nil, email: String, passwordHash: String, name: String, work: String = "", subscribers: [UUID] = [], subscribtions: [UUID] = [], images: [String] = [], image: String? = nil) {
+    init(id: UUID? = nil, email: String, passwordHash: String, name: String = "", work: String = "", subscribers: [UUID] = [], subscribtions: [UUID] = [], images: [String] = [], image: String? = nil) {
         self.id = id
         self.email = email
         self.passwordHash = passwordHash
@@ -63,7 +63,6 @@ extension User {
     struct Create: Content {
         var email: String
         var password: String
-        var name: String
     }
 }
 

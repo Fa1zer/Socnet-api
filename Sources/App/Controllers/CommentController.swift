@@ -13,13 +13,13 @@ struct CommentController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let comment = routes.grouped("comments")
         
-        comment.get("commnetID", use: self.commentUser(req:))
+        comment.get(":commentID", "user", use: self.commentUser(req:))
         comment.post("new", use: self.create(req:))
     }
     
     private func commentUser(req: Request) async throws -> User {
         guard let comment = try await Comment.find(req.parameters.get("commentID"), on: req.db),
-              let user = try await User.find(comment.user.id, on: req.db) else {
+              let user = try await User.find(comment.$user.id, on: req.db) else {
             throw Abort(.notFound)
         }
         
@@ -40,7 +40,7 @@ struct CommentController: RouteCollection {
         return .ok
     }
     
-    private struct CreateCommentData: Content {
+    struct CreateCommentData: Content {
         var id: UUID?
         var userID: UUID
         var postID: UUID

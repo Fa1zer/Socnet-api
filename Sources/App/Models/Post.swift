@@ -16,9 +16,6 @@ final class Post: Model, Content {
     @ID(key: .id)
     var id: UUID?
     
-    @Parent(key: "user_id")
-    var user: User
-    
     @Field(key: "image")
     var image: String
     
@@ -28,6 +25,9 @@ final class Post: Model, Content {
     @Field(key: "likes")
     var likes: Int
     
+    @Parent(key: "user_id")
+    var user: User
+    
     @Children(for: \.$post)
     var comments: [Comment]
     
@@ -35,10 +35,10 @@ final class Post: Model, Content {
     
     init(id: UUID? = nil, userID: User.IDValue, image: String, text: String = "", likes: Int = .zero) {
         self.id = id
-        self.$user.id = userID
         self.image = image
         self.text = text
         self.likes = likes
+        self.$user.id = userID
     }
     
 }

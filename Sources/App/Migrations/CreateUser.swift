@@ -15,7 +15,7 @@ struct CreateUser: AsyncMigration {
             .id()
             .field("email", .string, .required)
             .field("password_hash", .string, .required)
-            .field("name", .string, .required)
+            .field("name", .string)
             .field("work", .string)
             .field("subscribers", .array(of: .uuid))
             .field("subscribtions", .array(of: .uuid))

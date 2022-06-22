@@ -14,6 +14,7 @@ struct PostController: RouteCollection {
         let post = routes.grouped("posts")
         
         post.get("all", use: self.index(req:))
+        post.get(":postID", "comments", use: self.commentsIndex(req:))
         post.post("new", use: self.create(req:))
         post.delete("delete", ":postID", use: self.delete(req:))
     }
@@ -23,12 +24,10 @@ struct PostController: RouteCollection {
         var newPosts = [CreatePostData]()
         
         for post in posts {
-            let data = try await req.fileio.collectFile(at: post.image)
-            
             newPosts.append(CreatePostData(
                 id: post.id,
-                userID: post.user.id ?? UUID(),
-                image: File(data: data, filename: post.image),
+                userID: post.$user.id,
+                image: post.image,
                 text: post.text,
                 likes: post.likes
             ))
@@ -40,15 +39,10 @@ struct PostController: RouteCollection {
     private func create(req: Request) async throws -> HTTPStatus {
         let createPostData = try req.content.decode(CreatePostData.self)
         
-        try await req.fileio.writeFile(
-            createPostData.image.data,
-            at: req.application.directory.publicDirectory + createPostData.image.filename
-        )
-        
         let post = Post(
             id: createPostData.id,
             userID: createPostData.userID,
-            image: req.application.directory.publicDirectory + createPostData.image.filename,
+            image: createPostData.image,
             text: createPostData.text,
             likes: createPostData.likes
         )
@@ -58,26 +52,42 @@ struct PostController: RouteCollection {
         return .ok
     }
     
+    private func commentsIndex(req: Request) async throws -> [CommentController.CreateCommentData] {
+        let comments = try await Post.find(req.parameters.get("postID"), on: req.db)?.$comments.get(on: req.db) ?? []
+        var createCommentDatas = [CommentController.CreateCommentData]()
+        
+        for comment in comments {
+            createCommentDatas.append(CommentController.CreateCommentData(
+                id: comment.id,
+                userID: comment.$user.id,
+                postID: comment.$post.id,
+                text: comment.text
+            ))
+        }
+        
+        return createCommentDatas
+    }
+    
     private func delete(req: Request) async throws -> HTTPStatus {
         try await Post.find(req.parameters.get("postID"), on: req.db)?.delete(on: req.db)
         
         return .ok
     }
     
-    struct CreatePostData: Content {
-        var id: UUID?
-        var userID: UUID
-        var image: File
-        var text: String
-        var likes: Int
-        
-        init(id: UUID? = nil, userID: UUID, image: File, text: String = "", likes: Int = .zero) {
-            self.id = id
-            self.userID = userID
-            self.image = image
-            self.text = text
-            self.likes = likes
-        }
-    }
+}
+
+struct CreatePostData: Content {
+    var id: UUID?
+    var userID: UUID
+    var image: String
+    var text: String
+    var likes: Int
     
+    init(id: UUID? = nil, userID: UUID, image: String, text: String = "", likes: Int = .zero) {
+        self.id = id
+        self.userID = userID
+        self.image = image
+        self.text = text
+        self.likes = likes
+    }
 }
