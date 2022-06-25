@@ -15,8 +15,8 @@ struct PostController: RouteCollection {
         
         post.get("all", use: self.index(req:))
         post.get(":postID", "comments", use: self.commentsIndex(req:))
-        post.post("new", use: self.create(req:))
-        post.delete("delete", ":postID", use: self.delete(req:))
+        post.grouped(UserToken.authenticator()).post("new", use: self.create(req:))
+        post.grouped(UserToken.authenticator()).delete("delete", ":postID", use: self.delete(req:))
     }
     
     private func index(req: Request) async throws -> [CreatePostData] {
@@ -37,6 +37,7 @@ struct PostController: RouteCollection {
     }
     
     private func create(req: Request) async throws -> HTTPStatus {
+        _ = try req.auth.require(User.self)
         let createPostData = try req.content.decode(CreatePostData.self)
         
         let post = Post(
@@ -69,7 +70,14 @@ struct PostController: RouteCollection {
     }
     
     private func delete(req: Request) async throws -> HTTPStatus {
-        try await Post.find(req.parameters.get("postID"), on: req.db)?.delete(on: req.db)
+        let user = try req.auth.require(User.self)
+        let post = try await Post.find(req.parameters.get("postID"), on: req.db)
+        
+        guard user.id == post?.$user.id else {
+            throw Abort(.badRequest)
+        }
+        
+        try await post?.delete(on: req.db)
         
         return .ok
     }

@@ -14,7 +14,8 @@ struct CommentController: RouteCollection {
         let comment = routes.grouped("comments")
         
         comment.get(":commentID", "user", use: self.commentUser(req:))
-        comment.post("new", use: self.create(req:))
+        comment.grouped(UserToken.authenticator()).post("new", use: self.create(req:))
+        comment.grouped(UserToken.authenticator()).delete(":commentID", "delete", use: self.delete(req:))
     }
     
     private func commentUser(req: Request) async throws -> User {
@@ -27,6 +28,7 @@ struct CommentController: RouteCollection {
     }
     
     private func create(req: Request) async throws -> HTTPStatus {
+        _ = try req.auth.require(User.self)
         let createCommentData = try req.content.decode(CreateCommentData.self)
         let comment = Comment(
             id: createCommentData.id,
@@ -36,6 +38,19 @@ struct CommentController: RouteCollection {
         )
         
         try await comment.save(on: req.db)
+        
+        return .ok
+    }
+    
+    private func delete(req: Request) async throws -> HTTPStatus {
+        let user = try req.auth.require(User.self)
+        let comment = try await Comment.find(req.parameters.get("commentID"), on: req.db)
+        
+        guard comment?.$user.id == user.id else {
+            throw Abort(.badRequest)
+        }
+        
+        try await comment?.delete(on: req.db)
         
         return .ok
     }

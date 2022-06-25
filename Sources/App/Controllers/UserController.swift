@@ -13,13 +13,16 @@ struct UserController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let user = routes.grouped("users")
         let passwordProtected = routes.grouped(User.authenticator())
+        let tokenProtected = user.grouped(UserToken.authenticator())
         
         passwordProtected.get("auth", use: self.auth(req:))
+        
+        tokenProtected.get("me", use: self.me(req:))
+        tokenProtected.put("change", use: self.change(req:))
         
         user.get("all", use: self.index(req:))
         user.get("user", ":userID", use: self.user(req:))
         user.post("new", use: self.create(req:))
-        user.put("change", use: self.change(req:))
         user.get("posts", ":userID", use: self.allPosts(req:))
     }
     
@@ -27,20 +30,17 @@ struct UserController: RouteCollection {
         try await User.query(on: req.db).all()
     }
     
-    private func auth(req: Request) async throws -> CreateUserData {
+    private func me(req: Request) async throws -> User {
+        try req.auth.require(User.self)
+    }
+    
+    private func auth(req: Request) async throws -> UserToken {
         let user = try req.auth.require(User.self)
+        let token = try user.generateToken()
         
-        return CreateUserData(
-            id: user.id,
-            email: user.email,
-            passwordHash: user.passwordHash,
-            name: user.name,
-            work: user.work,
-            subscribers: user.subscribers,
-            subscribtions: user.subscribtions,
-            images: user.images,
-            image: user.image
-        )
+        try await token.save(on: req.db)
+        
+        return token
     }
     
     private func allPosts(req: Request) async throws -> [CreatePostData] {
@@ -95,8 +95,9 @@ struct UserController: RouteCollection {
     
     private func change(req: Request) async throws -> HTTPStatus {
         let newUser = try req.content.decode(CreateUserData.self)
+        let oldUser = try req.auth.require(User.self)
         
-        guard let oldUser = try await User.find(newUser.id, on: req.db) else {
+        guard oldUser.id == newUser.id else {
             throw Abort(.notFound)
         }
                 
