@@ -17,6 +17,8 @@ struct PostController: RouteCollection {
         post.get(":postID", "comments", use: self.commentsIndex(req:))
         post.grouped(UserToken.authenticator()).post("new", use: self.create(req:))
         post.grouped(UserToken.authenticator()).delete("delete", ":postID", use: self.delete(req:))
+        post.grouped(UserToken.authenticator()).put("like", ":postID", use: self.like(req:))
+        post.grouped(UserToken.authenticator()).put("dislike", ":postID", use: self.dislike(req:))
     }
     
     private func index(req: Request) async throws -> [CreatePostData] {
@@ -67,6 +69,34 @@ struct PostController: RouteCollection {
         }
         
         return createCommentDatas
+    }
+    
+    private func like(req: Request) async throws -> HTTPStatus {
+        _ = try req.auth.require(User.self)
+        
+        guard let post = try await Post.find(req.parameters.get("postID"), on: req.db) else {
+            throw Abort(.notFound)
+        }
+        
+        post.likes += 1
+        
+        try await post.save(on: req.db)
+        
+        return .ok
+    }
+    
+    private func dislike(req: Request) async throws -> HTTPStatus {
+        _ = try req.auth.require(User.self)
+        
+        guard let post = try await Post.find(req.parameters.get("postID"), on: req.db) else {
+            throw Abort(.notFound)
+        }
+        
+        post.likes -= 1
+        
+        try await post.save(on: req.db)
+        
+        return .ok
     }
     
     private func delete(req: Request) async throws -> HTTPStatus {

@@ -19,6 +19,9 @@ struct UserController: RouteCollection {
         
         tokenProtected.get("me", use: self.me(req:))
         tokenProtected.put("change", use: self.change(req:))
+        tokenProtected.delete("logOut", use: self.deleteUserToken(req:))
+        tokenProtected.put("subscribe", ":userID", use: self.subscribe(req:))
+        tokenProtected.put("unsubscribe", ":userID", use: self.unsubscribe(req:))
         
         user.get("all", use: self.index(req:))
         user.get("user", ":userID", use: self.user(req:))
@@ -34,6 +37,58 @@ struct UserController: RouteCollection {
         try req.auth.require(User.self)
     }
     
+    private func subscribe(req: Request) async throws -> HTTPStatus {
+        let user = try req.auth.require(User.self)
+        
+        guard let someUser =  try await User.find(req.parameters.get("userID"), on: req.db),
+              let userID = user.id,
+              let someUserID = someUser.id,
+              userID != someUserID else {
+            throw Abort(.badRequest)
+        }
+        
+        someUser.subscribers.append(userID)
+        user.subscribtions.append(someUserID)
+        
+        try await someUser.save(on: req.db)
+        try await user.save(on: req.db)
+        
+        return .ok
+    }
+    
+    private func unsubscribe(req: Request) async throws -> HTTPStatus {
+        let user = try req.auth.require(User.self)
+        
+        guard let someUser =  try await User.find(req.parameters.get("userID"), on: req.db),
+              let userID = user.id,
+              let someUserID = someUser.id,
+              user.subscribtions.contains(someUserID),
+              someUser.subscribers.contains(userID) else {
+            throw Abort(.notFound)
+        }
+        
+        for i in 0 ..< someUser.subscribers.count {
+            if someUser.subscribers[i] == userID {
+                someUser.subscribers.remove(at: i)
+                
+                break
+            }
+        }
+        
+        for i in 0 ..< user.subscribtions.count {
+            if user.subscribtions[i] == someUserID {
+                user.subscribtions.remove(at: i)
+                
+                break
+            }
+        }
+        
+        try await someUser.save(on: req.db)
+        try await user.save(on: req.db)
+        
+        return .ok
+    }
+    
     private func auth(req: Request) async throws -> UserToken {
         let user = try req.auth.require(User.self)
         let token = try user.generateToken()
@@ -41,6 +96,15 @@ struct UserController: RouteCollection {
         try await token.save(on: req.db)
         
         return token
+    }
+    
+    private func deleteUserToken(req: Request) async throws -> HTTPStatus {
+        let user = try req.auth.require(User.self)
+        let token = try await UserToken.query(on: req.db).all().filter { $0.$user.id == user.id }.first
+        
+        try await token?.delete(on: req.db)
+        
+        return .ok
     }
     
     private func allPosts(req: Request) async throws -> [CreatePostData] {
