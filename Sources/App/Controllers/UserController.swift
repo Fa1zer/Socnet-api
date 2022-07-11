@@ -13,13 +13,19 @@ struct UserController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let user = routes.grouped("users")
         let passwordProtected = routes.grouped(User.authenticator())
+        let tokenProtected = user.grouped(UserToken.authenticator())
         
         passwordProtected.get("auth", use: self.auth(req:))
+        
+        tokenProtected.get("me", use: self.me(req:))
+        tokenProtected.put("change", use: self.change(req:))
+        tokenProtected.delete("logOut", use: self.deleteUserToken(req:))
+        tokenProtected.put("subscribe", ":userID", use: self.subscribe(req:))
+        tokenProtected.put("unsubscribe", ":userID", use: self.unsubscribe(req:))
         
         user.get("all", use: self.index(req:))
         user.get("user", ":userID", use: self.user(req:))
         user.post("new", use: self.create(req:))
-        user.put("change", use: self.change(req:))
         user.get("posts", ":userID", use: self.allPosts(req:))
     }
     
@@ -27,20 +33,78 @@ struct UserController: RouteCollection {
         try await User.query(on: req.db).all()
     }
     
-    private func auth(req: Request) async throws -> CreateUserData {
+    private func me(req: Request) async throws -> User {
+        try req.auth.require(User.self)
+    }
+    
+    private func subscribe(req: Request) async throws -> HTTPStatus {
         let user = try req.auth.require(User.self)
         
-        return CreateUserData(
-            id: user.id,
-            email: user.email,
-            passwordHash: user.passwordHash,
-            name: user.name,
-            work: user.work,
-            subscribers: user.subscribers,
-            subscribtions: user.subscribtions,
-            images: user.images,
-            image: user.image
-        )
+        guard let someUser =  try await User.find(req.parameters.get("userID"), on: req.db),
+              let userID = user.id,
+              let someUserID = someUser.id,
+              userID != someUserID else {
+            throw Abort(.badRequest)
+        }
+        
+        someUser.subscribers.append(userID)
+        user.subscribtions.append(someUserID)
+        
+        try await someUser.save(on: req.db)
+        try await user.save(on: req.db)
+        
+        return .ok
+    }
+    
+    private func unsubscribe(req: Request) async throws -> HTTPStatus {
+        let user = try req.auth.require(User.self)
+        
+        guard let someUser =  try await User.find(req.parameters.get("userID"), on: req.db),
+              let userID = user.id,
+              let someUserID = someUser.id,
+              user.subscribtions.contains(someUserID),
+              someUser.subscribers.contains(userID) else {
+            throw Abort(.notFound)
+        }
+        
+        for i in 0 ..< someUser.subscribers.count {
+            if someUser.subscribers[i] == userID {
+                someUser.subscribers.remove(at: i)
+                
+                break
+            }
+        }
+        
+        for i in 0 ..< user.subscribtions.count {
+            if user.subscribtions[i] == someUserID {
+                user.subscribtions.remove(at: i)
+                
+                break
+            }
+        }
+        
+        try await someUser.save(on: req.db)
+        try await user.save(on: req.db)
+        
+        return .ok
+    }
+    
+    private func auth(req: Request) async throws -> UserToken {
+        let user = try req.auth.require(User.self)
+        let token = try user.generateToken()
+        
+        try await token.save(on: req.db)
+        
+        return token
+    }
+    
+    private func deleteUserToken(req: Request) async throws -> HTTPStatus {
+        let user = try req.auth.require(User.self)
+        let token = try await UserToken.query(on: req.db).all().filter { $0.$user.id == user.id }.first
+        
+        try await token?.delete(on: req.db)
+        
+        return .ok
     }
     
     private func allPosts(req: Request) async throws -> [CreatePostData] {
@@ -95,8 +159,9 @@ struct UserController: RouteCollection {
     
     private func change(req: Request) async throws -> HTTPStatus {
         let newUser = try req.content.decode(CreateUserData.self)
+        let oldUser = try req.auth.require(User.self)
         
-        guard let oldUser = try await User.find(newUser.id, on: req.db) else {
+        guard oldUser.id == newUser.id else {
             throw Abort(.notFound)
         }
                 
