@@ -27,6 +27,8 @@ struct UserController: RouteCollection {
         user.get("user", ":userID", use: self.user(req:))
         user.post("new", use: self.create(req:))
         user.get("posts", ":userID", use: self.allPosts(req:))
+        user.get("subscribers", ":userID", use: self.getUserSubscriers(req:))
+        user.get("subscribtions", ":userID", use: self.getUserSubscribtions(req:))
     }
     
     private func index(req: Request) async throws -> [User] {
@@ -146,6 +148,43 @@ struct UserController: RouteCollection {
         )
     }
     
+    private func getUserSubscriers(req: Request) async throws -> [User] {
+        guard let user = try await User.find(req.parameters.get("userID"), on: req.db) else {
+            throw Abort(.notFound)
+        }
+        
+        var subscribers = [User]()
+        
+        for id in user.subscribers {
+            
+            guard let user = try await User.find(id, on: req.db) else {
+                throw Abort(.notFound)
+            }
+            
+            subscribers.append(user)
+        }
+        
+        return subscribers
+    }
+    
+    private func getUserSubscribtions(req: Request) async throws -> [User] {
+        guard let user = try await User.find(req.parameters.get("userID"), on: req.db) else {
+            throw Abort(.notFound)
+        }
+        
+        var subscribers = [User]()
+        
+        for id in user.subscribtions {
+            guard let user = try await User.find(id, on: req.db) else {
+                throw Abort(.notFound)
+            }
+            
+            subscribers.append(user)
+        }
+        
+        return subscribers
+    }
+    
     private func create(req: Request) async throws -> HTTPStatus {
         try User.Create.validate(content: req)
         
@@ -160,10 +199,6 @@ struct UserController: RouteCollection {
     private func change(req: Request) async throws -> HTTPStatus {
         let newUser = try req.content.decode(CreateUserData.self)
         let oldUser = try req.auth.require(User.self)
-        
-        guard oldUser.id == newUser.id else {
-            throw Abort(.notFound)
-        }
                 
         oldUser.images = newUser.images
         oldUser.image = newUser.image
